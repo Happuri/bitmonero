@@ -32,7 +32,6 @@ class network_throttle : public i_network_throttle {
 		network_time_seconds m_start_time; // when we were created
 		bool m_any_packet_yet; // did we yet got any packet to count
 
-		double m_overheat; // last overheat
 		double m_overheat_time; // time in seconds after epoch
 
 		std::string m_name; // my name for debug and logs
@@ -56,6 +55,10 @@ class network_throttle : public i_network_throttle {
 		virtual network_time_seconds get_sleep_time_after_tick(size_t packet_size); // ditto, but first tick the timer
 
 		static double my_time_seconds(); // a timer
+		double m_do_send_time;
+		double m_after_write_time;
+		double m_max_sending_time;
+		double m_overheat;
 
 		virtual size_t get_recommended_size_of_planned_transport() const; 
 		//virtual void add_planned_transport(size_t size);

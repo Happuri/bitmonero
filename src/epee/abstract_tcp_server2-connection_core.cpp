@@ -318,6 +318,9 @@ void connection_basic_pimpl::sleep_before_packet(size_t packet_size, int phase) 
 
 void connection_basic::do_send_handler_start(const void* ptr , size_t cb ) {
 	mI->sleep_before_packet(cb,1);
+	 using namespace epee::net_utils;
+	CRITICAL_REGION_LOCAL(  network_throttle_manager::m_lock_get_global_throttle_out );
+	network_throttle_manager::get_global_throttle_out().m_do_send_time = network_throttle_manager::get_global_throttle_out().my_time_seconds();
 }
 
 void connection_basic::do_send_handler_delayed(const void* ptr , size_t cb ) {
