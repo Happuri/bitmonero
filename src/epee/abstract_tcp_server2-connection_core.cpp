@@ -39,8 +39,6 @@ class network_throttle {
 		network_time_seconds m_start_time; // when we were created
 		bool m_any_packet_yet; // did we yet got any packet to count
 
-		double m_overheat; // last overheat
-		double m_overheat_time; // time in seconds after epoch
 
 		std::string m_name; // my name for debug and logs
 
@@ -63,6 +61,8 @@ class network_throttle {
 
 		static double my_time_seconds(); // a timer
 
+		double m_overheat; // last overheat
+		double m_overheat_time; // time in seconds after epoch
 	private:
 		network_time_seconds time_to_slot(network_time_seconds t) const { return std::floor( t ); } // convert exact time eg 13.7 to rounded time for slot number in history 13
 		void _handle_trafic_exact(size_t packet_size, size_t orginal_size); 
@@ -335,6 +335,11 @@ void connection_basic_pimpl::sleep_before_packet(size_t packet_size, int phase) 
 
 void connection_basic::do_send_handler_start(const void* ptr , size_t cb ) {
 	mI->sleep_before_packet(cb,1);
+	// get current time
+	epee::critical_region_t<decltype(mI->m_throttle_global_lock)> guard(mI->m_throttle_global_lock); // *** critical ***
+	//	m_throttle_global.m_overheat = m_throttle_global.my_time_seconds();
+	mI->m_throttle_global.m_out.m_overheat = mI->m_throttle_global.m_out.my_time_seconds();
+
 }
 
 void connection_basic::do_send_handler_delayed(const void* ptr , size_t cb ) {
@@ -344,16 +349,24 @@ void connection_basic::do_send_handler_write(const void* ptr , size_t cb ) {
 }
 
 void connection_basic::do_send_handler_stop(const void* ptr , size_t cb ) {
+
 }
 
 void connection_basic::do_send_handler_after_write( const boost::system::error_code& e, size_t cb ) {
-	// dela = end-start;
-
+	epee::critical_region_t<decltype(mI->m_throttle_global_lock)> guard(mI->m_throttle_global_lock); // *** critical ***
+	double now = mI->m_throttle_global.m_out.my_time_seconds();
+	mI->m_throttle_global.m_out.m_overheat_time = now - mI->m_throttle_global.m_out.m_overheat;
+	LOG_PRINT_L0("Time between do_read_handler start, do_send_handler_write from queue and do_send_handler_after_write: " << mI->m_throttle_global.m_out.m_overheat_time);
 }
 
 void connection_basic::do_send_handler_write_from_queue( const boost::system::error_code& e, size_t cb ) {
 	// start_time = now();
 	mI->sleep_before_packet(cb,2);
+	epee::critical_region_t<decltype(mI->m_throttle_global_lock)> guard(mI->m_throttle_global_lock); // *** critical ***
+	//	m_throttle_global.m_overheat = m_throttle_global.my_time_seconds();
+	mI->m_throttle_global.m_out.m_overheat = mI->m_throttle_global.m_out.my_time_seconds();
+
+
 }
 
 void connection_basic::do_read_handler_start(const boost::system::error_code& e, std::size_t bytes_transferred) { // from read, after read completion
