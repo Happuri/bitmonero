@@ -39,7 +39,6 @@ class network_throttle {
 		network_time_seconds m_start_time; // when we were created
 		bool m_any_packet_yet; // did we yet got any packet to count
 
-
 		std::string m_name; // my name for debug and logs
 
 	// each sample is now 1 second
@@ -60,9 +59,12 @@ class network_throttle {
 		network_time_seconds get_sleep_time_after_tick(size_t packet_size); // ditto, but first tick the timer
 
 		static double my_time_seconds(); // a timer
-
 		double m_overheat; // last overheat
 		double m_overheat_time; // time in seconds after epoch
+		double m_do_send_time;
+		double m_after_write_time;
+		double m_max_sending_time; // TODO as option ?
+
 	private:
 		network_time_seconds time_to_slot(network_time_seconds t) const { return std::floor( t ); } // convert exact time eg 13.7 to rounded time for slot number in history 13
 		void _handle_trafic_exact(size_t packet_size, size_t orginal_size); 
@@ -125,6 +127,9 @@ network_throttle::network_throttle()
 	m_any_packet_yet = false;
 	m_slot_size = 1.0; // hard coded in few places
 	m_target_speed = 2 * 1024;
+	m_max_sending_time = 0.1;
+	m_overheat = 0.;
+	m_overheat_time = 0.;
 }
 
 void network_throttle::set_name(const std::string &name) 
@@ -194,6 +199,14 @@ network_time_seconds network_throttle::get_sleep_time(size_t packet_size) const
 {
 	double A=0, W=0, D=0;
 	calculate_times(packet_size, A,W,D, true);
+	// overheat ?
+	if(this->m_overheat) {
+		// sleep more :)
+		LOG_PRINT_L0("Sleeping more, overheat: " << this->m_overheat);
+		D += this->m_overheat *10. ;
+
+	}
+
 	return D;
 }
 
@@ -335,11 +348,10 @@ void connection_basic_pimpl::sleep_before_packet(size_t packet_size, int phase) 
 
 void connection_basic::do_send_handler_start(const void* ptr , size_t cb ) {
 	mI->sleep_before_packet(cb,1);
+	mI->m_throttle_global.m_out.m_overheat = 0.;
 	// get current time
 	epee::critical_region_t<decltype(mI->m_throttle_global_lock)> guard(mI->m_throttle_global_lock); // *** critical ***
-	//	m_throttle_global.m_overheat = m_throttle_global.my_time_seconds();
-	mI->m_throttle_global.m_out.m_overheat = mI->m_throttle_global.m_out.my_time_seconds();
-
+	mI->m_throttle_global.m_out.m_do_send_time = mI->m_throttle_global.m_out.my_time_seconds();
 }
 
 void connection_basic::do_send_handler_delayed(const void* ptr , size_t cb ) {
@@ -349,23 +361,30 @@ void connection_basic::do_send_handler_write(const void* ptr , size_t cb ) {
 }
 
 void connection_basic::do_send_handler_stop(const void* ptr , size_t cb ) {
-
 }
 
 void connection_basic::do_send_handler_after_write( const boost::system::error_code& e, size_t cb ) {
 	epee::critical_region_t<decltype(mI->m_throttle_global_lock)> guard(mI->m_throttle_global_lock); // *** critical ***
-	double now = mI->m_throttle_global.m_out.my_time_seconds();
-	mI->m_throttle_global.m_out.m_overheat_time = now - mI->m_throttle_global.m_out.m_overheat;
-	LOG_PRINT_L0("Time between do_read_handler start, do_send_handler_write from queue and do_send_handler_after_write: " << mI->m_throttle_global.m_out.m_overheat_time);
+	auto now = mI->m_throttle_global.m_out.my_time_seconds();
+	mI->m_throttle_global.m_out.m_after_write_time = now - mI->m_throttle_global.m_out.m_do_send_time;
+
+	// if current sending time > max sending time
+	if(mI->m_throttle_global.m_out.m_after_write_time > mI->m_throttle_global.m_out.m_max_sending_time) {
+		// overheat = current sending time - max sending time
+		mI->m_throttle_global.m_out.m_overheat = mI->m_throttle_global.m_out.m_after_write_time - mI->m_throttle_global.m_out.m_max_sending_time;
+		LOG_PRINT_L0("Overheat: " << mI->m_throttle_global.m_out.m_overheat);
+	}
+
+	LOG_PRINT_L0("Time between do_read_handler start, do_send_handler_write from queue and do_send_handler_after_write: " << mI->m_throttle_global.m_out.m_after_write_time);
+
 }
 
 void connection_basic::do_send_handler_write_from_queue( const boost::system::error_code& e, size_t cb ) {
 	// start_time = now();
 	mI->sleep_before_packet(cb,2);
+	mI->m_throttle_global.m_out.m_overheat = 0.;
 	epee::critical_region_t<decltype(mI->m_throttle_global_lock)> guard(mI->m_throttle_global_lock); // *** critical ***
-	//	m_throttle_global.m_overheat = m_throttle_global.my_time_seconds();
-	mI->m_throttle_global.m_out.m_overheat = mI->m_throttle_global.m_out.my_time_seconds();
-
+	mI->m_throttle_global.m_out.m_do_send_time = mI->m_throttle_global.m_out.my_time_seconds();
 
 }
 
