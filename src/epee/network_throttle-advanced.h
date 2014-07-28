@@ -51,8 +51,8 @@ class network_throttle : public i_network_throttle {
 		virtual void tick(); // poke and update timers/history
 		
 		// overheat function:
-		virtual void setOverheat();
-		virtual void setOverheat(double lag);
+		virtual void set_overheat();
+		virtual void update_overheat(double lag);
 
 		virtual double get_time_seconds() const ; // a timer
 

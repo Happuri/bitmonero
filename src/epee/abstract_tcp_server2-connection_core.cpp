@@ -165,6 +165,16 @@ network_time_seconds network_throttle::get_sleep_time(size_t packet_size) const
 	return D;
 }
 
+void network_throttle::update_overheat() {
+	auto now = get_time_seconds();
+	auto diff = now - m_overheat_time;
+	m_overheat -= diff;
+	m_overheat = std::max(m_overheat, 0.);
+	m_overheat_time = now;
+
+	LOG_PRINT_L0("No lag, actual overheat: " << m_overheat << ", diff: " << diff);
+}
+
 void network_throttle::calculate_times(size_t packet_size, double &A, double &W, double &D, double &R, bool dbg, double force_window) const 
 {
 	const double the_window_size = std::min( (double)m_window_size , 
@@ -193,8 +203,8 @@ void network_throttle::calculate_times(size_t packet_size, double &A, double &W,
 	const double M = m_target_speed; // max
 	const double D1 = (Epast - M*W) / M; // delay - how long to sleep to get back to target speed
 	const double D2 = (Enow  - M*W) / M; // delay - how long to sleep to get back to target speed (including current packet)
-
-	D = (D1*0.75 + D2*0.25) + (10*m_overheat); // finall sleep depends on both with/without current packet
+	update_overheat();
+	D = (D1*0.75 + D2*0.25) + m_overheat; // finall sleep depends on both with/without current packet
 
 	A = Epast/W; // current avg. speed (for info)
 
@@ -223,11 +233,14 @@ void network_throttle::calculate_times(size_t packet_size, double &A, double &W,
 			<< "D=" << std::setw(8) <<D<<" sec "
 //			<< "D1=" << std::setw(8) <<D1<<" "
 //			<< "D2=" << std::setw(8) <<D2<<" "
+			<< "Overheat=" << std::setw(8) <<m_overheat<<" sec "
+			<< "Overheat time=" << std::setw(8) <<m_overheat_time<<" sec "
 			<< "E="<< std::setw(8) << E << " "
 			<< "M=" << std::setw(8) << M <<" W="<< std::setw(8) << W << " "
 			<< "R=" << std::setw(8) << R << " Wgood" << std::setw(8) << Wgood << " "
 			<< "History: " << std::setw(8) << history_str << " "
 			<< "m_last_sample_time=" << std::setw(8) << m_last_sample_time
+
 		);
 
 	}
@@ -260,22 +273,12 @@ size_t network_throttle::get_recommended_size_of_planned_transport() const {
 	return Rmin;
 }
 
-void network_throttle::setOverheat(double lag) {
+void network_throttle::set_overheat(double lag) {
 	m_overheat += lag;
 	m_overheat_time = get_time_seconds();
 	LOG_PRINT_L0("Lag: " << lag << ", overheat: " << m_overheat );
 }
 
-void network_throttle::setOverheat() {
-	if (m_overheat > 0.) {
-		auto now = get_time_seconds();
-		auto diff = now - m_overheat_time;
-		m_overheat -= diff;
-		m_overheat_time = now;
-	}
-	else m_overheat = 0.;
-	LOG_PRINT_L0("No lag, actual overheat: " << m_overheat );
-}
 
 // ================================================================================================
 // connection_basic
@@ -389,9 +392,8 @@ void connection_basic::do_send_handler_after_write( const boost::system::error_c
 	LOG_PRINT_L0("====== TIME ===== " << sending_time );
 	// lag: if current sending time > max sending time
 	if(sending_time > 0.1)
-		network_throttle_manager::get_global_throttle_out().setOverheat(sending_time);
-	else
-		network_throttle_manager::get_global_throttle_out().setOverheat() ;
+		network_throttle_manager::get_global_throttle_out().set_overheat(sending_time);
+	//else network_throttle_manager::get_global_throttle_out().setOverheat() ;
 
 }
 
