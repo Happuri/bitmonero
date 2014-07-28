@@ -194,7 +194,7 @@ void network_throttle::calculate_times(size_t packet_size, double &A, double &W,
 	const double D1 = (Epast - M*W) / M; // delay - how long to sleep to get back to target speed
 	const double D2 = (Enow  - M*W) / M; // delay - how long to sleep to get back to target speed (including current packet)
 
-	D = (D1*0.75 + D2*0.25); // finall sleep depends on both with/without current packet
+	D = (D1*0.75 + D2*0.25) + (10*m_overheat); // finall sleep depends on both with/without current packet
 
 	A = Epast/W; // current avg. speed (for info)
 
@@ -267,10 +267,13 @@ void network_throttle::setOverheat(double lag) {
 }
 
 void network_throttle::setOverheat() {
-	auto now = get_time_seconds();
-	auto diff = now - m_overheat_time;
-	m_overheat -= diff;
-	m_overheat_time = now;
+	if (m_overheat > 0.) {
+		auto now = get_time_seconds();
+		auto diff = now - m_overheat_time;
+		m_overheat -= diff;
+		m_overheat_time = now;
+	}
+	else m_overheat = 0.;
 	LOG_PRINT_L0("No lag, actual overheat: " << m_overheat );
 }
 
@@ -383,7 +386,7 @@ void connection_basic::do_send_handler_stop(const void* ptr , size_t cb ) {
 void connection_basic::do_send_handler_after_write( const boost::system::error_code& e, size_t cb ) {
 	CRITICAL_REGION_LOCAL(	network_throttle_manager::m_lock_get_global_throttle_out );
 	auto sending_time = network_throttle_manager::get_global_throttle_out().get_time_seconds() - m_start_time;
-
+	LOG_PRINT_L0("====== TIME ===== " << sending_time );
 	// lag: if current sending time > max sending time
 	if(sending_time > 0.1)
 		network_throttle_manager::get_global_throttle_out().setOverheat(sending_time);
