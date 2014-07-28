@@ -260,6 +260,20 @@ size_t network_throttle::get_recommended_size_of_planned_transport() const {
 	return Rmin;
 }
 
+void network_throttle::setOverheat(double lag) {
+	m_overheat += lag;
+	m_overheat_time = get_time_seconds();
+	LOG_PRINT_L0("Lag: " << lag << ", overheat: " << m_overheat );
+}
+
+void network_throttle::setOverheat() {
+	auto now = get_time_seconds();
+	auto diff = now - m_overheat_time;
+	m_overheat -= diff;
+	m_overheat_time = now;
+	LOG_PRINT_L0("No lag, actual overheat: " << m_overheat );
+}
+
 // ================================================================================================
 // connection_basic
 // ================================================================================================
@@ -347,8 +361,14 @@ void connection_basic_pimpl::sleep_before_packet(size_t packet_size, int phase) 
 	} while(delay > 0);
 }
 
+void connection_basic::set_start_time() {
+	CRITICAL_REGION_LOCAL(	network_throttle_manager::m_lock_get_global_throttle_out );
+	m_start_time = network_throttle_manager::get_global_throttle_out().get_time_seconds();
+}
+
 void connection_basic::do_send_handler_start(const void* ptr , size_t cb ) {
 	mI->sleep_before_packet(cb,1);
+	set_start_time();
 }
 
 void connection_basic::do_send_handler_delayed(const void* ptr , size_t cb ) {
@@ -361,13 +381,20 @@ void connection_basic::do_send_handler_stop(const void* ptr , size_t cb ) {
 }
 
 void connection_basic::do_send_handler_after_write( const boost::system::error_code& e, size_t cb ) {
-	// dela = end-start;
+	CRITICAL_REGION_LOCAL(	network_throttle_manager::m_lock_get_global_throttle_out );
+	auto sending_time = network_throttle_manager::get_global_throttle_out().get_time_seconds() - m_start_time;
+
+	// lag: if current sending time > max sending time
+	if(sending_time > 0.1)
+		network_throttle_manager::get_global_throttle_out().setOverheat(sending_time);
+	else
+		network_throttle_manager::get_global_throttle_out().setOverheat() ;
 
 }
 
 void connection_basic::do_send_handler_write_from_queue( const boost::system::error_code& e, size_t cb ) {
-	// start_time = now();
 	mI->sleep_before_packet(cb,2);
+	set_start_time();
 }
 
 void connection_basic::do_read_handler_start(const boost::system::error_code& e, std::size_t bytes_transferred) { // from read, after read completion
@@ -376,7 +403,7 @@ void connection_basic::do_read_handler_start(const boost::system::error_code& e,
 	  CRITICAL_REGION_LOCAL(	network_throttle_manager::m_lock_get_global_throttle_in );
 		network_throttle_manager::get_global_throttle_in().handle_trafic_tcp( packet_size ); // increase counter - global
 		// epee::critical_region_t<decltype(mI->m_throttle_global_lock)> guard(mI->m_throttle_global_lock); // *** critical *** 
-		// mI->m_throttle_global.m_in.handle_trafic_tcp( packet_size ); // increase counter - global	
+		// mI->m_t1hrottle_global.m_in.handle_trafic_tcp( packet_size ); // increase counter - global
 	}
 }
 

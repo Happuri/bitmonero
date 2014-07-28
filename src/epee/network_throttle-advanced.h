@@ -50,6 +50,9 @@ class network_throttle : public i_network_throttle {
 		virtual void handle_congestion(double overheat); // call this when congestion is detected; see example use
 		virtual void tick(); // poke and update timers/history
 		
+		// overheat function:
+		virtual void setOverheat();
+		virtual void setOverheat(double lag);
 
 		virtual double get_time_seconds() const ; // a timer
 

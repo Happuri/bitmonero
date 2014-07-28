@@ -89,6 +89,7 @@ class connection_basic { // not-templated base class for rapid developmet of som
     std::list<std::string> m_send_que;
     i_connection_filter* &m_pfilter;
     volatile bool m_is_multithreaded;
+    double m_start_time;
 
     /// Strand to ensure the connection's handlers are not called concurrently.
     boost::asio::io_service::strand strand_;
@@ -106,6 +107,7 @@ class connection_basic { // not-templated base class for rapid developmet of som
 		void do_send_handler_after_write( const boost::system::error_code& e, size_t cb ); // from handle_write
 		void do_send_handler_write_from_queue( const boost::system::error_code& e, size_t cb ); // from handle_write, sending next part
   	void do_read_handler_start(const boost::system::error_code& e, std::size_t bytes_transferred); // from read, after read completion
+    void set_start_time();
 
 		static void set_rate_up_limit(uint64_t limit);
 		static void set_rate_down_limit(uint64_t limit);
@@ -287,7 +289,6 @@ class connection_basic { // not-templated base class for rapid developmet of som
     void handle_accept(const boost::system::error_code& e);
 
     bool is_thread_worker();
-
     /// The io_service used to perform asynchronous operations.
     std::unique_ptr<boost::asio::io_service> m_io_service_local_instance;
     boost::asio::io_service& io_service_;    
